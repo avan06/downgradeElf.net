@@ -12,6 +12,7 @@ namespace downgradeElf
         public enum ActionEnum
         {
             None,
+            Count,
             StoreTrue,
             StoreFalse,
         }
@@ -117,6 +118,11 @@ namespace downgradeElf
                     argument.Name = name;
                     argument.Flag = flag;
                 }
+                else if (!nameOrFlag.StartsWith("--"))
+                {
+                    argument.Flag = name;
+                    flag = name;
+                }
 
                 if (name.Length > dashMaxLen) dashMaxLen = name.Length;
                 if (flag.Length > flagMaxLen) flagMaxLen = flag.Length;
@@ -153,8 +159,14 @@ namespace downgradeElf
                     arg = ArgDashs[dashIdx];
                     bool actionTrue = arg.Action == ActionEnum.StoreTrue;
                     bool actionFalse = arg.Action == ActionEnum.StoreFalse;
+                    bool actionCount = arg.Action == ActionEnum.Count;
                     if (actionTrue) arg.Value = "true";
                     else if (actionFalse) arg.Value = "false";
+                    else if (actionCount)
+                    {
+                        int.TryParse(arg.Value, out int cnt);
+                        arg.Value = (++cnt).ToString();
+                    }
                     else if (idx + 1 < argVals.Length)
                     {
                         var strArgNext = argVals[idx + 1];

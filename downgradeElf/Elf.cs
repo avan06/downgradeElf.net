@@ -400,30 +400,41 @@ namespace downgradeElf
         /// </summary>
         public enum DTag : UInt64
         {
-            NULL                     = 0,
-            NEEDED                   = 1,
-            PLTRELSZ                 = 2,
-            PLTGOT                   = 3,
-            HASH                     = 4,
-            STRTAB                   = 5,
-            SYMTAB                   = 6,
-            RELA                     = 7,
-            RELASZ                   = 8,
-            RELAENT                  = 9,
-            STRSZ                    = 10,
-            SYMENT                   = 11,
-            INIT                     = 12,
-            FINI                     = 13,
-            SONAME                   = 14,
-            RPATH                    = 15,
-            SYMBOLIC                 = 16,
-            REL                      = 17,
-            RELSZ                    = 18,
-            RELENT                   = 19,
-            PLTREL                   = 20,
-            DEBUG                    = 21,
-            TEXTREL                  = 22,
-            JMPREL                   = 23,
+            NULL                     = 0,  // Marks end of dynamic section
+            NEEDED                   = 1,  // Name of needed library
+            PLTRELSZ                 = 2,  // Size in bytes of PLT relocs
+            PLTGOT                   = 3,  // Processor defined value
+            HASH                     = 4,  // Address of symbol hash table
+            STRTAB                   = 5,  // Address of string table
+            SYMTAB                   = 6,  // Address of symbol table
+            RELA                     = 7,  // Address of Rela relocs
+            RELASZ                   = 8,  // Total size of Rela relocs
+            RELAENT                  = 9,  // Size of one Rela reloc
+            STRSZ                    = 10, // Size of string table
+            SYMENT                   = 11, // Size of one symbol table entry
+            INIT                     = 12, // Address of init function
+            FINI                     = 13, // Address of termination function
+            SONAME                   = 14, // Name of shared object
+            RPATH                    = 15, // Library search path (deprecated)
+            SYMBOLIC                 = 16, // Start symbol search here
+            REL                      = 17, // Address of Rel relocs
+            RELSZ                    = 18, // Total size of Rel relocs
+            RELENT                   = 19, // Size of one Rel reloc
+            PLTREL                   = 20, // Type of reloc in PLT
+            DEBUG                    = 21, // For debugging, unspecified
+            TEXTREL                  = 22, // Reloc might modify .text
+            JMPREL                   = 23, // Address of PLT relocs
+            BIND_NOW                 = 24, // Process relocations of object
+            INIT_ARRAY               = 25, // Array with addresses of init fct
+            FINI_ARRAY               = 26, // Array with addresses of fini fct
+            INIT_ARRAYSZ             = 27, // Size in bytes of DT_INIT_ARRAY
+            FINI_ARRAYSZ             = 28, // Size in bytes of DT_FINI_ARRAY
+            RUNPATH                  = 29, // Library search path
+            FLAGS                    = 30, // Flags for the object being loaded
+            ENCODING                 = 32, // Start of encoded range
+            PREINIT_ARRAY            = 32, // Array with addresses of preinit fct*/
+            PREINIT_ARRAYSZ          = 33, // size in bytes of DT_PREINIT_ARRAY
+            NUM                      = 34, // Number used
             LOPROC                   = 0x70000000,
             HIPROC                   = 0x7FFFFFFF,
             // Tag for SCE string table size
@@ -457,39 +468,53 @@ namespace downgradeElf
             SCE_SYMTABSZ             = 0x6100003F,
         }
 
+
+
         /// <summary>
         /// type of relocation
+        /// Relocation Calculations
+        /// The following notation is used to describe relocation computations.
+        /// 
+        /// A: The addend used to compute the value of the relocatable field.
+        /// B: The base address at which a shared object is loaded into memory during execution. Generally, a shared object file is built with a base virtual address of 0. However, the execution address of the shared object is different. See Program Header.
+        /// G: The offset into the global offset table at which the address of the relocation entry's symbol resides during execution. See Global Offset Table (Processor-Specific).
+        /// GOT: The address of the global offset table. See Global Offset Table (Processor-Specific).
+        /// L: The section offset or address of the procedure linkage table entry for a symbol. See Procedure Linkage Table (Processor-Specific).
+        /// P: The section offset or address of the storage unit being relocated, computed using r_offset.
+        /// S: The value of the symbol whose index resides in the relocation entry.
+        /// Z: The size of the symbol whose index resides in the relocation entry.
+        /// https://docs.oracle.com/cd/E23824_01/html/819-0690/chapter6-54839.html
         /// </summary>
         public enum RTYPES : UInt32
         {
-            AMD64_default   = 0x00,
-            AMD64_64        = 0x01,
-            AMD64_PC32      = 0x02,
-            AMD64_GOT32     = 0x03,
-            AMD64_PLT32     = 0x04,
-            AMD64_COPY      = 0x05,
-            AMD64_GLOB_DAT  = 0x06,
-            AMD64_JUMP_SLOT = 0x07,
-            AMD64_RELATIVE  = 0x08,
-            AMD64_GOTPCREL  = 0x09,
-            AMD64_32        = 0x0A,
-            AMD64_32S       = 0x0B,
-            AMD64_16        = 0x0C,
-            AMD64_PC16      = 0x0D,
-            AMD64_8         = 0x0E,
-            AMD64_PC8       = 0x0F,
-            AMD64_DTPMOD64  = 0x10,
-            AMD64_DTPOFF64  = 0x11,
-            AMD64_TPOFF64   = 0x12,
-            AMD64_TLSGD     = 0x13,
-            AMD64_TLSLD     = 0x14,
-            AMD64_DTPOFF32  = 0x15,
-            AMD64_GOTTPOFF  = 0x16,
-            AMD64_TPOFF32   = 0x17,
-            AMD64_PC64      = 0x18,
-            AMD64_GOTOFF64  = 0x19,
-            AMD64_GOTPC32   = 0x1A,
-        }
+            AMD64_default   = 0x00, //None
+            AMD64_64        = 0x01, //S + A
+            AMD64_PC32      = 0x02, //S + A - P
+            AMD64_GOT32     = 0x03, //G + A
+            AMD64_PLT32     = 0x04, //L + A - P
+            AMD64_COPY      = 0x05, //Refer to the explanation following this table.
+            AMD64_GLOB_DAT  = 0x06, //S
+            AMD64_JUMP_SLOT = 0x07, //S
+            AMD64_RELATIVE  = 0x08, //B + A
+            AMD64_GOTPCREL  = 0x09, //G + GOT + A - P
+            AMD64_32        = 0x0A, //S + A
+            AMD64_32S       = 0x0B, //S + A
+            AMD64_16        = 0x0C, //S + A
+            AMD64_PC16      = 0x0D, //S + A - P
+            AMD64_8         = 0x0E, //S + A
+            AMD64_PC8       = 0x0F, //S + A - P
+            AMD64_DTPMOD64  = 0x10, //
+            AMD64_DTPOFF64  = 0x11, //
+            AMD64_TPOFF64   = 0x12, //
+            AMD64_TLSGD     = 0x13, //
+            AMD64_TLSLD     = 0x14, //
+            AMD64_DTPOFF32  = 0x15, //
+            AMD64_GOTTPOFF  = 0x16, //
+            AMD64_TPOFF32   = 0x17, //
+            AMD64_PC64      = 0x18, //S + A - P
+            AMD64_GOTOFF64  = 0x19, //S + A - GOT
+            AMD64_GOTPC32   = 0x1A, //GOT + A + P
+            }
 
         /// <summary>
         /// Symbol Information

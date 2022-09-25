@@ -242,7 +242,7 @@ namespace downgradeElf
                         var dynaBytes = new byte[Elf.sizeDynamic];
                         Buffer.BlockCopy(Elf.ElfData, (int)dynamicPH.offset + dIdx * Elf.sizeDynamic, dynaBytes, 0, Elf.sizeDynamic);
                         var dyna = Utils.BytesToStruct<Elf.Dynamic>(dynaBytes);
-
+                        //Console.WriteLine(" Tag:{0,-20} Val:{1,20:X}", dyna.tag, dyna.val);
                         if (dyna.tag      == Elf.DTag.SCE_JMPREL) relaTableAddr   += dyna.val;
                         else if (dyna.tag == Elf.DTag.SCE_PLTRELSZ) relaTableSize += dyna.val;
                         else if (dyna.tag == Elf.DTag.SCE_RELASZ) relaTableSize   += dyna.val;
