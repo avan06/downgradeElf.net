@@ -109,7 +109,7 @@ namespace downgradeElf
             else if (Elf.elfHdr.type_ == Elf.EType.SCE_DYNAMIC)
             {
                 neededType = ElfPHdr.PhdrType.SCE_MODULEPARAM;
-                paramMagic = "\xBF\xF4\x13\x3C";
+                paramMagic = Encoding.UTF8.GetString(new byte[] { 0xBF, 0xF4, 0x13, 0x3C });
                 Console.WriteLine("module file detected, type:{0}", Elf.elfHdr.type_);
             }
             else parser.Error("error: unsupported elf type", false);
@@ -135,7 +135,7 @@ namespace downgradeElf
 
                 Elf.ProgramParam progFile = Utils.BytesToStruct<Elf.ProgramParam>(pHdrFile);
                 if (progFile.paramSize < 0x14) parser.Error("error: param structure is too small", false);
-                if (Encoding.UTF8.GetString(progFile.paramMagic) != paramMagic) parser.Error("error: unexpected param structure format", false);
+                if (Encoding.UTF8.GetString(progFile.paramMagic) != paramMagic) parser.Error(string.Format("error: unexpected elf param structure format:{0}, the correct param should be BF-F4-13-3C.", BitConverter.ToString(progFile.paramMagic)), false);
 
                 (uint oldMajor, uint oldMinor, uint oldPatch) = Utils.ParseSdkVersion(progFile.sdkVersion);
                 string oldSdkVersionStr = Utils.StringifySdkVersion(oldMajor, oldMinor, oldPatch);
