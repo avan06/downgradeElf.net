@@ -88,7 +88,14 @@ namespace downgradeElf
                 if (verbose) Console.Write("Segment{0:00}({1:X4}~{2:X4}) Offset:{3:X8} +{4,-8:X} (memSz: {5:X8}) Type:{6:X8}({7}) \n",
                         idx, pHdrOffset, pHdrOffset + elfHdr.phdrSize - 1, pHdr.offset, pHdr.fileSize, pHdr.memSize, (uint)pHdr.type_, pHdr.type_);
 
-                if (pHdr.offset == 0) return WriteLineError("error: unable to load program header #{0}", idx);
+                if (pHdr.offset == 0)
+                {
+                    if (!verbose) Console.Write("Segment{0:00}({1:X4}~{2:X4}) Offset:{3:X8} +{4,-8:X} (memSz: {5:X8}) Type:{6:X8}({7}) \n",
+                        idx, pHdrOffset, pHdrOffset + elfHdr.phdrSize - 1, pHdr.offset, pHdr.fileSize, pHdr.memSize, (uint)pHdr.type_, pHdr.type_);
+                    Console.WriteLine("=========================================", idx);
+                    Console.WriteLine("error: unable to load program header #{0}", idx);
+                    Console.WriteLine("=========================================\n", idx);
+                }
 
                 progHdrs.Add(pHdr);
             }
