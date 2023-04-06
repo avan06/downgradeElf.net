@@ -157,39 +157,41 @@ namespace downgradeElf
             /// Prevents error on old kernel versions: uncontiguous RELRO and DATA segments
             if (newSdkVersion < 0x06000000) // less than 6.00 fw
             {
-                List<ElfPHdr.ProgramHeader> segments = new List<ElfPHdr.ProgramHeader>();
+                List<(int idx, ElfPHdr.ProgramHeader seg)> segments = new List<(int idx, ElfPHdr.ProgramHeader seg)>();
 
                 bool patchMemholeReferencesEnable = patchMemholeReferences == 1;
                 bool patchMemholeReferencesPatchRestBytesNotZeroes = patchMemholeReferences == 2;
                 bool patchMemholeReferencesPatchNot8Multiply = patchMemholeReferences == 3;
 
-                foreach (ElfPHdr.ProgramHeader progHdr in Elf.progHdrs)
+                for (int idx = 0; idx < Elf.progHdrs.Count; idx++)
                 {
+                    ElfPHdr.ProgramHeader progHdr = Elf.progHdrs[idx];
                     if (progHdr.type_ != ElfPHdr.PhdrType.LOAD && progHdr.type_ != ElfPHdr.PhdrType.SCE_RELRO) continue;
                     if (progHdr.type_ == ElfPHdr.PhdrType.LOAD && progHdr.flags == ElfPHdr.PhdrFlag.RX) continue; //Console.WriteLine("skipping text segment...");
 
                     //Console.WriteLine("type:0x{0:X} vaddr:0x{1:X} paddr:0x{2:X} fileSize:0x{3:X} memSize:0x{4:X} align:0x{5:X}", progHdr.type_, progHdr.vaddr, progHdr.paddr, progHdr.fileSize, progHdr.memSize, progHdr.align));
-                    segments.Add(progHdr);
+                    segments.Add((idx, progHdr));
                 }
 
-                foreach (ElfPHdr.ProgramHeader progHdr in Elf.progHdrs)
+                for (int idx = 0; idx < Elf.progHdrs.Count; idx++)
                 {
-                    if (segments.Contains(progHdr)) continue;
-                    foreach (var seg in segments)
+                    ElfPHdr.ProgramHeader progHdr = Elf.progHdrs[idx];
+                    if (segments.Contains((idx, progHdr))) continue;
+                    foreach ((int segIdx, ElfPHdr.ProgramHeader seg) in segments)
                     {
                         if (seg.paddr != progHdr.paddr && seg.vaddr != progHdr.vaddr) continue;
-                        segments.Add(progHdr);
+                        segments.Add((idx, progHdr));
                         break;
                     }
                 }
 
                 segments.Sort((pHdr1, pHdr2) =>
                 { //segs.sort(key=lambda x: (x.vaddr, -(x.vaddr + x.memSize)))
-                    int result = pHdr1.vaddr.CompareTo(pHdr2.vaddr);
+                    int result = pHdr1.seg.vaddr.CompareTo(pHdr2.seg.vaddr);
                     if (result != 0) return result;
 
-                    long vaddr1Len = (long)(pHdr1.vaddr + pHdr1.memSize);
-                    long vaddr2Len = (long)(pHdr2.vaddr + pHdr2.memSize);
+                    long vaddr1Len = (long)(pHdr1.seg.vaddr + pHdr1.seg.memSize);
+                    long vaddr2Len = (long)(pHdr2.seg.vaddr + pHdr2.seg.memSize);
 
                     result = vaddr1Len.CompareTo(vaddr2Len) * -1;
                     return result;
@@ -197,8 +199,8 @@ namespace downgradeElf
 
                 for (int idx = 1; idx < segments.Count; idx++)
                 {
-                    ElfPHdr.ProgramHeader seg = segments[idx];
-                    ElfPHdr.ProgramHeader preSeg = segments[idx - 1];
+                    ElfPHdr.ProgramHeader seg = segments[idx].seg;
+                    ElfPHdr.ProgramHeader preSeg = segments[idx - 1].seg;
                     if (seg.vaddr < preSeg.vaddr ||
                         seg.vaddr + seg.memSize > preSeg.vaddr + preSeg.memSize ||
                         seg.type_ != preSeg.type_) continue;
@@ -230,8 +232,8 @@ namespace downgradeElf
                     dynamicTableCount = (int)dynamicPH.memSize / Elf.sizeDynamic;
 
                     dynamicTableAddr = dynamicPH.offset;
-                    relaTableAddr = dynlibDataPH.offset;
-                    symTableAddr = dynlibDataPH.offset;
+                    relaTableAddr    = dynlibDataPH.offset;
+                    symTableAddr     = dynlibDataPH.offset;
                 }
                 ulong firstSegmentVirtualAddress = Elf.progHdrs[0].vaddr;
 
@@ -276,17 +278,17 @@ namespace downgradeElf
                     {
                         var segment = segments[sIdxA];
                         var nextSegment = segments[sIdxA + 1];
-                        var memSizeAligned = Utils.AlignUp(segment.memSize, 0x4000);
+                        var memSizeAligned = Utils.AlignUp(segment.seg.memSize, 0x4000);
 
-                        if (segment.vaddr + memSizeAligned >= nextSegment.vaddr) continue;
+                        if (segment.seg.vaddr + memSizeAligned >= nextSegment.seg.vaddr) continue;
 
-                        ulong oldMemSize  = segment.memSize;
-                        ulong oldPaddr    = nextSegment.paddr;
-                        ulong oldVaddr    = nextSegment.vaddr;
-                        var paddrMemSize  = nextSegment.memSize;
-                        var vaddrMemSize  = nextSegment.memSize;  // ida shows virtual address;
-                        var paddrFileSize = nextSegment.fileSize;
-                        var vaddrFileSize = nextSegment.fileSize;
+                        ulong oldMemSize  = segment.seg.memSize;
+                        ulong oldPaddr    = nextSegment.seg.paddr;
+                        ulong oldVaddr    = nextSegment.seg.vaddr;
+                        var paddrMemSize  = nextSegment.seg.memSize;
+                        var vaddrMemSize  = nextSegment.seg.memSize;  // ida shows virtual address;
+                        var paddrFileSize = nextSegment.seg.fileSize;
+                        var vaddrFileSize = nextSegment.seg.fileSize;
 
                         ulong newMemSize = 0;
                         ulong newPaddr   = 0;
@@ -295,7 +297,7 @@ namespace downgradeElf
                         ulong vaddrEnd   = 0;
                         ulong paddrDiff  = 0;
                         ulong vaddrDiff  = 0;
-                        Console.WriteLine("\nfound a memhole between: 0x{0:X8} ~ 0x{1:X8} (not including the last address)", segment.vaddr + memSizeAligned, nextSegment.vaddr);
+                        Console.WriteLine("\nfound a memhole between: 0x{0:X8} ~ 0x{1:X8} (not including the last address)", segment.seg.vaddr + memSizeAligned, nextSegment.seg.vaddr);
 
                         if (notPatchProgramHeaders || patchMemhole == 0)
                         {
@@ -311,30 +313,30 @@ namespace downgradeElf
                             Console.WriteLine("\npatching program headers");
                             if (patchMemhole == 1)
                             {
-                                newMemSize = oldVaddr - segment.vaddr;
+                                newMemSize = oldVaddr - segment.seg.vaddr;
                                 newPaddr = oldPaddr;
                                 newVaddr = oldVaddr;
 
                                 paddrEnd = oldPaddr + paddrMemSize - 1;
                                 vaddrEnd = oldVaddr + vaddrMemSize - 1;
 
-                                segment.memSize = newMemSize;
+                                segment.seg.memSize = newMemSize;
                                 segments[sIdxA] = segment;
                             }
                             else if (patchMemhole == 2)
                             {
                                 newMemSize = memSizeAligned;
-                                newPaddr = segment.paddr + newMemSize;
-                                newVaddr = segment.vaddr + newMemSize;
+                                newPaddr = segment.seg.paddr + newMemSize;
+                                newVaddr = segment.seg.vaddr + newMemSize;
 
-                                segment.memSize = newMemSize;
+                                segment.seg.memSize = newMemSize;
                                 segments[sIdxA] = segment;
 
                                 paddrDiff = oldPaddr - newPaddr;
                                 vaddrDiff = oldVaddr - newVaddr;
 
-                                nextSegment.paddr = newPaddr;
-                                nextSegment.vaddr = newVaddr;
+                                nextSegment.seg.paddr = newPaddr;
+                                nextSegment.seg.vaddr = newVaddr;
                                 segments[sIdxA + 1] = nextSegment;
 
                                 if (segments.Count > sIdxA + 2)
@@ -343,37 +345,37 @@ namespace downgradeElf
                                     {
                                         bool found = false;
                                         var segB = segments[sIdxB];
-                                        if (oldPaddr == segB.paddr)
+                                        if (oldPaddr == segB.seg.paddr)
                                         {
                                             found = true;
-                                            segB.paddr = newPaddr;
+                                            segB.seg.paddr = newPaddr;
                                             segments[sIdxB] = segB;
                                         }
-                                        if (oldVaddr == segB.vaddr)
+                                        if (oldVaddr == segB.seg.vaddr)
                                         {
                                             found = true;
-                                            segB.vaddr = newVaddr;
+                                            segB.seg.vaddr = newVaddr;
                                             segments[sIdxB] = segB;
                                         }
-                                        if (segB.memSize > paddrMemSize)
+                                        if (segB.seg.memSize > paddrMemSize)
                                         {
                                             found = true;
-                                            paddrMemSize = segB.memSize;
+                                            paddrMemSize = segB.seg.memSize;
                                         }
-                                        if (segB.memSize > vaddrMemSize)
+                                        if (segB.seg.memSize > vaddrMemSize)
                                         {
                                             found = true;
-                                            vaddrMemSize = segB.memSize;
+                                            vaddrMemSize = segB.seg.memSize;
                                         }
-                                        if (segB.fileSize > paddrFileSize)
+                                        if (segB.seg.fileSize > paddrFileSize)
                                         {
                                             found = true;
-                                            paddrFileSize = segB.fileSize;
+                                            paddrFileSize = segB.seg.fileSize;
                                         }
-                                        if (segB.fileSize > vaddrFileSize)
+                                        if (segB.seg.fileSize > vaddrFileSize)
                                         {
                                             found = true;
-                                            vaddrFileSize = segB.fileSize;
+                                            vaddrFileSize = segB.seg.fileSize;
                                         }
                                         if (!found) break;
                                     }
@@ -537,7 +539,7 @@ namespace downgradeElf
                             // might be that it's segment before memhole to after its file size && segment after memhole to after its file size
                             // but we don't do 2 ranges, so instead we do segment before memhole to the segment after the memhole && its file size
 
-                            var structSize = (int)(newVaddr + vaddrFileSize - segment.vaddr);
+                            var structSize = (int)(newVaddr + vaddrFileSize - segment.seg.vaddr);
 
                             List<(ulong Val, ulong VaddrDiff)> values = new List<(ulong Val, ulong VaddrDiff)>();
                             if (stValueReplacementsUse) values.AddRange(stValueValues);
@@ -550,21 +552,21 @@ namespace downgradeElf
 
                             if (replacements.Count > 0)
                             {
-                                var offset = (int)segment.offset;
+                                var offset = (int)segment.seg.offset;
                                 var segmentBytes = new byte[structSize];
                                 Buffer.BlockCopy(Elf.ElfData, offset, segmentBytes, 0, segmentBytes.Length);
 
                                 List<byte> newSegmentList = new List<byte>();
-                                var safeMinBytesSize = (int)nextSegment.vaddr;
+                                var safeMinBytesSize = (int)nextSegment.seg.vaddr;
                                 var safeMinBytesCount = (int)Math.Ceiling(Math.Log(safeMinBytesSize, 0x00000100));
                                 var safeMinBytesEstimatedCount = (int)Math.Pow(2, Math.Ceiling(Math.Log(safeMinBytesCount, 2)));
 
-                                var safeMaxBytesSize = (int)nextSegment.vaddr + (int)vaddrMemSize - 1;
+                                var safeMaxBytesSize = (int)nextSegment.seg.vaddr + (int)vaddrMemSize - 1;
                                 var safeMaxBytesCount = (int)Math.Ceiling(Math.Log(safeMaxBytesSize, 0x00000100));
                                 var safeMaxBytesEstimatedCount = (int)Math.Pow(2, Math.Ceiling(Math.Log(safeMaxBytesCount, 2)));
 
-                                var replacementsMinValue = nextSegment.vaddr;
-                                var replacementsMaxValue = nextSegment.vaddr + vaddrMemSize - 1;
+                                var replacementsMinValue = nextSegment.seg.vaddr;
+                                var replacementsMaxValue = nextSegment.seg.vaddr + vaddrMemSize - 1;
 
                                 int sIdx = 0;
                                 bool found = false;
@@ -637,7 +639,7 @@ namespace downgradeElf
                                                 if (found)
                                                 {
                                                     found = false;
-                                                    if ((sIdx + (long)segment.vaddr) % 8 != 0) errorFound = true;
+                                                    if ((sIdx + (long)segment.seg.vaddr) % 8 != 0) errorFound = true;
                                                     if (errorFound)
                                                     {
                                                         if (patchMemholeReferencesPatchNot8Multiply)
@@ -669,7 +671,7 @@ namespace downgradeElf
                                                     if (verbose)
                                                     {
                                                         Console.Write("Entry: {0,-8}", sIdx + 1);
-                                                        Console.Write("Address: 0x{0:X8} ", sIdx + (long)segment.vaddr);
+                                                        Console.Write("Address: 0x{0:X8} ", sIdx + (long)segment.seg.vaddr);
                                                         Console.Write("Value: 0x{0:X8} => 0x{1:X8}\t", replacement.Value.Old, replacement.Value.New);
                                                         Console.Write("Section: 0x{0:X4}\n", section);
                                                     }
@@ -677,7 +679,7 @@ namespace downgradeElf
                                                 else if (verbose)
                                                 {
                                                     Console.Write("Entry: {0,-8}", sIdx + 1);
-                                                    Console.Write("Address: 0x{0:X8} ", sIdx + (long)segment.vaddr);
+                                                    Console.Write("Address: 0x{0:X8} ", sIdx + (long)segment.seg.vaddr);
                                                     Console.Write("Value: 0x{0:X8}\t", replacement.Value.Old);
                                                     Console.Write("Section: 0x{0:X4}\n", section);
                                                 }
@@ -711,13 +713,15 @@ namespace downgradeElf
                         }
 
                         Console.WriteLine("\nFirst Segment Virtual Address: {0:X8}", firstSegmentVirtualAddress);
-                        Console.WriteLine("Segment Before Memory Hole Virtual Address: {0:X8}", segment.vaddr);
-                        Console.WriteLine("Segment After Memory Hole Unmapped Virtual Address: {0:X8}", nextSegment.vaddr);
+                        Console.WriteLine("Segment Before Memory Hole Virtual Address: {0:X8}", segment.seg.vaddr);
+                        Console.WriteLine("Segment After Memory Hole Unmapped Virtual Address: {0:X8}", nextSegment.seg.vaddr);
                         Console.WriteLine("Segment After Memory Hole Mapped Virtual Address: {0:X8}", newVaddr);
                         // Console.WriteLine("Segment After Memory Hole File Size: {0:X8}", SegmentAfterMemHole_FileSize);
                         Console.WriteLine("Segment After Memory Hole Memory Size: {0:X8}", vaddrMemSize);
                     }
                 }
+
+                foreach ((int idx, ElfPHdr.ProgramHeader seg) in segments) Elf.progHdrs[idx] = seg;
             }
 
             Console.WriteLine("\nsearching for version segment");
